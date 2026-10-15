@@ -2,7 +2,8 @@
 import { AlertTriangle, ArrowDown, ArrowUp, Download, Loader2, Play, RotateCcw, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
-import { formatBytes, formatDuration } from "@/lib/format";
+import { extOf, formatBytes, formatDuration } from "@/lib/format";
+import { parseCommand } from "@/lib/command";
 import Corners from "./Corners";
 
 function useElapsed(active: boolean, startedAt: number | null) {
@@ -18,6 +19,9 @@ function useElapsed(active: boolean, startedAt: number | null) {
 export default function ProgressCard({ onStart, onCancel, onReset }: { onStart: () => void; onCancel: () => void; onReset: () => void }) {
   const { status, progress, eta, liveSize, startedAt, result, error, meta, sourceUrl, file } = useStore();
   const elapsed = useElapsed(status === "processing", startedAt);
+  const mode = useStore((s) => s.mode);
+  const customCommand = useStore((s) => s.customCommand);
+  const cmdOk = mode !== "command" || (!!file && parseCommand(customCommand, `input.${extOf(file.name) || "mp4"}`, null).ok);
 
   if (!file) {
     return (
@@ -47,9 +51,10 @@ export default function ProgressCard({ onStart, onCancel, onReset }: { onStart: 
               <div className="bar indeterminate"><i /></div>
             </div>
           )}
-          <button className="btn btn-primary btn-lg w-full" onClick={onStart} disabled={busyPrep}>
-            <Play size={18} fill="currentColor" /> เริ่มบีบอัด / แปลงไฟล์
+          <button className="btn btn-primary btn-lg w-full" onClick={onStart} disabled={busyPrep || !cmdOk}>
+            <Play size={18} fill="currentColor" /> {mode === "command" ? "รันคำสั่ง FFmpeg" : "เริ่มบีบอัด / แปลงไฟล์"}
           </button>
+          {!cmdOk && <p className="mt-2 text-center text-[.74rem] text-err">คำสั่งยังไม่ถูกต้อง — ดูรายละเอียดที่ช่องคำสั่ง</p>}
           <p className="mt-3 text-center text-[.74rem] text-muted">ประมวลผลบนเครื่องคุณ — ความเร็วขึ้นกับ CPU และความยาวคลิป</p>
         </div>
       )}
@@ -119,8 +124,15 @@ function DoneView({ onReset, sourceUrl }: { onReset: () => void; sourceUrl: stri
         </div>
       </div>
 
-      <video key={view} src={view === "after" ? result.url : sourceUrl ?? undefined} controls playsInline
-        className="mt-4 aspect-video w-full rounded-xl border border-line bg-black object-contain" />
+      {result.mime.startsWith("audio/") && view === "after" ? (
+        <div className="mt-4 rounded-xl border border-line bg-surface p-4"><audio src={result.url} controls className="w-full" /></div>
+      ) : result.mime.startsWith("image/") && view === "after" ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={result.url} alt={result.name} className="mt-4 max-h-[420px] w-full rounded-xl border border-line bg-black object-contain" />
+      ) : (
+        <video key={view} src={view === "after" ? result.url : sourceUrl ?? undefined} controls playsInline
+          className="mt-4 aspect-video w-full rounded-xl border border-line bg-black object-contain" />
+      )}
 
       <div className="mt-4 space-y-3 text-[.78rem]">
         <div>

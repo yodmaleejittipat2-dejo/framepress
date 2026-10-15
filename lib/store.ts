@@ -10,6 +10,11 @@ interface State {
   sourceUrl: string | null;
   meta: MediaMeta | null;
   settings: Settings;
+  /** "preset" = Settings UI builds the command, "command" = user pastes their own ffmpeg line */
+  mode: "preset" | "command";
+  customCommand: string;
+  /** Seconds of output expected for the current job (progress %) */
+  jobDuration: number | null;
   progress: number; // 0–1
   eta: number | null; // seconds
   liveSize: number; // bytes written so far
@@ -25,6 +30,9 @@ interface State {
   setMeta: (m: MediaMeta | null) => void;
   patchSettings: (p: Partial<Settings>, keepPreset?: boolean) => void;
   applyPreset: (p: PresetDoc) => void;
+  setMode: (m: "preset" | "command") => void;
+  setCustomCommand: (c: string) => void;
+  setJobDuration: (d: number | null) => void;
   setProgress: (p: { progress?: number; eta?: number | null; liveSize?: number }) => void;
   pushLog: (line: string) => void;
   clearLogs: () => void;
@@ -44,6 +52,9 @@ export const useStore = create<State>((set, get) => ({
   sourceUrl: null,
   meta: null,
   settings: DEFAULT_SETTINGS,
+  mode: "preset",
+  customCommand: "",
+  jobDuration: null,
   progress: 0,
   eta: null,
   liveSize: 0,
@@ -63,6 +74,12 @@ export const useStore = create<State>((set, get) => ({
   setMeta: (meta) => set({ meta }),
   patchSettings: (p, keepPreset = false) =>
     set({ settings: { ...get().settings, ...p, ...(keepPreset ? {} : { presetId: null }) } }),
+  setMode: (mode) => set({ mode }),
+  setCustomCommand: (customCommand) => {
+    try { localStorage.setItem("fp-custom-cmd", customCommand); } catch {}
+    set({ customCommand });
+  },
+  setJobDuration: (jobDuration) => set({ jobDuration }),
   applyPreset: (p) => set({ settings: { ...DEFAULT_SETTINGS, ...p.settings, presetId: p.id } }),
   setProgress: (p) => set(p as Partial<State>),
   pushLog: (line) => {
@@ -81,7 +98,7 @@ export const useStore = create<State>((set, get) => ({
   setError: (error) => set({ error }),
   startJob: () => {
     get().setResult(null);
-    set({ progress: 0, eta: null, liveSize: 0, startedAt: Date.now(), error: null, status: "processing" });
+    set({ progress: 0, eta: null, liveSize: 0, jobDuration: null, startedAt: Date.now(), error: null, status: "processing" });
   },
   resetAll: () => {
     const { sourceUrl, result } = get();

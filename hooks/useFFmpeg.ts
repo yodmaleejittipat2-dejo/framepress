@@ -7,6 +7,7 @@ import { buildArgs, resolveCompat, toCli } from "@/lib/buildArgs";
 import { parseProbeLog, probeWithVideoElement } from "@/lib/probe";
 import { baseName, extOf, parseTimestamp } from "@/lib/format";
 import { ACCEPTED_EXT } from "@/lib/presets";
+import { parseCommand } from "@/lib/command";
 import type { Settings } from "@/lib/types";
 
 /* ------------------------------------------------------------------ *
@@ -69,10 +70,11 @@ function onLog(message: string) {
 
   // Progress from FFmpeg stats line: "frame=  120 fps= 30 q=28.0 size=  1024KiB time=00:00:04.00 bitrate=..."
   const t = message.match(/time=\s*(-?[\d:.]+)/);
-  if (t && st.meta?.duration) {
+  const total = st.jobDuration ?? st.meta?.duration;
+  if (t && total) {
     const cur = parseTimestamp(t[1]);
     if (Number.isFinite(cur) && cur >= 0) {
-      const p = Math.min(0.999, cur / st.meta.duration);
+      const p = Math.min(0.999, cur / total);
       const elapsed = st.startedAt ? (Date.now() - st.startedAt) / 1000 : 0;
       const eta = p > 0.01 ? (elapsed * (1 - p)) / p : null;
       st.setProgress({ progress: Math.max(st.progress, p), eta });
@@ -124,7 +126,7 @@ async function loadEngine(want: Flavor = flavorFor()): Promise<FFmpeg> {
         instance.on("progress", ({ progress }) => {
           const s = useStore.getState();
           // Fallback when duration is unknown (log parsing can't compute %)
-          if (s.status === "processing" && !s.meta?.duration && progress > 0 && progress <= 1) {
+          if (s.status === "processing" && !(s.jobDuration ?? s.meta?.duration) && progress > 0 && progress <= 1) {
             s.setProgress({ progress: Math.max(s.progress, progress) });
           }
         });
@@ -192,11 +194,76 @@ async function encode(file: File, settings: Settings, flavor: Flavor) {
   const t0 = performance.now();
   const code = await guardedExec(ff, cmd.args);
   if (cancelled) return null;
-  if (code !== 0) throw new Error(`FFmpeg exited with code ${code} — ดูรายละเอียดใน Log Console`);
+  if (code !== 0) throw new Error(exitError(code));
 
   const data = (await ff.readFile(cmd.outName)) as Uint8Array;
   await ff.deleteFile(cmd.outName).catch(() => {});
-  return { data, cmd, elapsed: (performance.now() - t0) / 1000 };
+  return { data, cmd, name: null as string | null, elapsed: (performance.now() - t0) / 1000 };
+}
+
+/** Pull the most useful FFmpeg error line out of the log. */
+function exitError(code: number): string {
+  const logs = useStore.getState().logs;
+  const start = logs.map((l) => l.startsWith("$ ")).lastIndexOf(true);
+  const recent = logs.slice(start + 1);
+  const generic = /conversion failed|error while (opening|filtering)|exiting normally/i;
+  // The first specific error after the command is usually the real cause (e.g. "Error setting option crf to value abc.")
+  const hit = recent.find((l) => /error|invalid|unrecognized|no such|not found|unknown|cannot|could not|does not|unable|failed|incorrect|undefined constant/i.test(l) && !generic.test(l))
+    ?? recent.reverse().find((l) => /error|failed/i.test(l));
+  return hit ? `FFmpeg หยุดทำงาน (code ${code}): ${hit.trim()}` : `FFmpeg exited with code ${code} — ดูรายละเอียดใน Log Console`;
+}
+
+/** Run a user-pasted ffmpeg command on the uploaded file. */
+async function encodeCustom(file: File, text: string, flavor: Flavor) {
+  const st = useStore.getState();
+  const ff = await loadEngine(flavor);
+  const inputName = await ensureInput(ff, file);
+  const cmd = parseCommand(text, inputName, st.meta?.duration ?? null, flavor === "mt" ? MT_THREADS : undefined);
+  if (!cmd.ok) throw new Error(cmd.errors.join(" • "));
+  st.setJobDuration(cmd.expectedDuration);
+  const cli = toCli(cmd.args, file.name);
+  st.setCommand(cli);
+  cmd.notes.forEach((n) => st.pushLog(`[warn] ${n}`));
+  st.pushLog(`$ ${cli}`);
+
+  const t0 = performance.now();
+  const code = await guardedExec(ff, cmd.args);
+  if (cancelled) return null;
+  if (code !== 0) throw new Error(exitError(code));
+
+  let data: Uint8Array;
+  try {
+    data = (await ff.readFile(cmd.outName)) as Uint8Array;
+  } catch {
+    throw new Error("คำสั่งทำงานจบแต่ไม่มีไฟล์ output — ตรวจสอบคำสั่งอีกครั้ง");
+  }
+  await ff.deleteFile(cmd.outName).catch(() => {});
+  return { data, cmd: { mime: cmd.mime, ext: cmd.ext }, name: cmd.displayName, elapsed: (performance.now() - t0) / 1000 };
+}
+
+type EncodeResult = { data: Uint8Array; cmd: { mime: string; ext: string }; name: string | null; elapsed: number };
+
+function finish(file: File, out: EncodeResult) {
+  const blob = new Blob([out.data.slice().buffer as ArrayBuffer], { type: out.cmd.mime });
+  const s2 = useStore.getState();
+  s2.setResult({
+    url: URL.createObjectURL(blob),
+    name: out.name ?? `${baseName(file.name)}_compressed.${out.cmd.ext}`,
+    size: blob.size,
+    mime: out.cmd.mime,
+    elapsed: out.elapsed,
+  });
+  s2.setProgress({ progress: 1, eta: 0, liveSize: blob.size });
+  s2.setStatus("done");
+}
+
+function fail(e: unknown) {
+  if (cancelled) return;
+  if (e instanceof CoreCrash) dispose();
+  const msg = (e as Error)?.message ?? String(e);
+  const oom = /memory|OOM|out of bounds/i.test(msg);
+  useStore.getState().setError(oom ? "หน่วยความจำของเบราว์เซอร์ไม่พอ (WASM จำกัด ~2GB) — ลองไฟล์ที่เล็กลง หรือลดความละเอียด" : msg);
+  useStore.getState().setStatus("error");
 }
 
 /* ------------------------------------------------------------------ *
@@ -260,6 +327,30 @@ export function useFFmpeg() {
     cancelled = false;
     st.startJob();
 
+    if (st.mode === "command") {
+      const text = st.customCommand;
+      const probe = parseCommand(text, "input", null);
+      const flavor: Flavor = probe.needsSingleThread || !mtAvailable() ? "st" : "mt";
+      try {
+        let out;
+        try {
+          out = await encodeCustom(file, text, flavor);
+        } catch (e) {
+          if (cancelled || !(e instanceof CoreCrash) || flavor !== "mt") throw e;
+          mtBroken = true;
+          useStore.getState().pushLog("[engine] multi-thread core crashed — สลับไปใช้ single-thread แล้วเริ่มใหม่อัตโนมัติ");
+          dispose();
+          useStore.getState().startJob();
+          out = await encodeCustom(file, text, "st");
+        }
+        if (!out || cancelled) return;
+        finish(file, out);
+      } catch (e) {
+        fail(e);
+      }
+      return;
+    }
+
     const settings = st.settings;
     const flavor = flavorFor(settings);
     const isVp9 = resolveCompat(settings).settings.vcodec === "libvpx-vp9";
@@ -290,27 +381,9 @@ export function useFFmpeg() {
         }
       }
       if (!out || cancelled) return;
-
-      const blob = new Blob([out.data.slice().buffer as ArrayBuffer], { type: out.cmd.mime });
-      const s2 = useStore.getState();
-      s2.setResult({
-        url: URL.createObjectURL(blob),
-        name: `${baseName(file.name)}_compressed.${out.cmd.ext}`,
-        size: blob.size,
-        mime: out.cmd.mime,
-        elapsed: out.elapsed,
-      });
-      s2.setProgress({ progress: 1, eta: 0, liveSize: blob.size });
-      s2.setStatus("done");
+      finish(file, out);
     } catch (e) {
-      if (cancelled) return;
-      if (e instanceof CoreCrash) dispose();
-      const msg = (e as Error)?.message ?? String(e);
-      const oom = /memory|OOM|out of bounds|Aborted/i.test(msg);
-      useStore.getState().setError(
-        oom ? "หน่วยความจำของเบราว์เซอร์ไม่พอ (WASM จำกัด ~2GB) — ลองไฟล์ที่เล็กลง หรือลดความละเอียด" : msg,
-      );
-      useStore.getState().setStatus("error");
+      fail(e);
     }
   }, []);
 

@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
-import { AlertTriangle, Check, Clapperboard, Music, Package, SlidersHorizontal, Sparkles, VolumeX } from "lucide-react";
+import { AlertTriangle, Check, Clapperboard, Music, Package, SlidersHorizontal, Sparkles, SquareTerminal, VolumeX } from "lucide-react";
+import CommandEditor from "./CommandEditor";
 import { useStore } from "@/lib/store";
 import { useSite } from "@/lib/site";
 import { resolveCompat, targetVideoKbps } from "@/lib/buildArgs";
@@ -52,6 +53,8 @@ export default function SettingsPanel() {
   const locked = useStore((st) => st.status === "processing");
   const multiThread = useStore((st) => st.engine.multiThread);
   const presets = useSite((st) => st.presets);
+  const mode = useStore((st) => st.mode);
+  const setMode = useStore((st) => st.setMode);
   const set = (p: Partial<Settings>) => patch(p);
   const { warnings } = resolveCompat(s);
 
@@ -73,9 +76,28 @@ export default function SettingsPanel() {
           <div className="kicker">Settings</div>
           <h3 className="mt-2 flex items-center gap-2 text-lg font-semibold"><SlidersHorizontal size={18} /> ตั้งค่าการบีบอัด</h3>
         </div>
-        {active ? <span className="tag tag-accent"><Check size={12} /> {active.title}</span> : <span className="tag">Custom</span>}
+        {mode === "command" ? <span className="tag tag-accent"><SquareTerminal size={12} /> CLI</span>
+          : active ? <span className="tag tag-accent"><Check size={12} /> {active.title}</span> : <span className="tag">Custom</span>}
       </div>
 
+      {/* mode switch: guided settings vs. raw ffmpeg command */}
+      <div className="mt-5 grid grid-cols-2 gap-2" role="radiogroup" aria-label="โหมดการตั้งค่า">
+        {([
+          ["preset", SlidersHorizontal, "โหมดง่าย", "พรีเซ็ต + ปรับค่า"],
+          ["command", SquareTerminal, "คำสั่ง FFmpeg", "วางคำสั่งเอง"],
+        ] as const).map(([m, Icon, title, sub]) => (
+          <button key={m} type="button" role="radio" aria-checked={mode === m} disabled={locked} onClick={() => setMode(m)}
+            className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition ${mode === m ? "border-accent bg-accent-soft" : "border-line bg-surface hover:border-line-strong"}`}>
+            <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${mode === m ? "bg-accent text-accent-ink" : "border border-line"}`}><Icon size={17} /></span>
+            <span className="min-w-0">
+              <b className="block text-sm font-semibold">{title}</b>
+              <span className="block truncate text-[.72rem] text-muted">{sub}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {mode === "command" ? <div className="mt-5"><CommandEditor /></div> : (<>
       <div className="seg mt-5" role="tablist">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>
@@ -204,6 +226,7 @@ export default function SettingsPanel() {
           </div>
         )}
       </fieldset>
+      </>)}
     </aside>
   );
 }
