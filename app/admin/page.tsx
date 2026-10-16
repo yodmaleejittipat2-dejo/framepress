@@ -117,15 +117,32 @@ function Dashboard({ user }: { user: User }) {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
 
-  useEffect(() => subscribeSite(), []);
-  // Take a working copy once the live data has arrived
-  useEffect(() => {
-    if (site.loaded && content === null) { setContent(site.content); setPresets(site.presets); }
-  }, [site.loaded, site.content, site.presets, content]);
+  // `base*` = the server values our working copy started from. Dirty = working copy ≠ base,
+  // so a late-arriving snapshot can never make stale data look "edited" (and get saved back).
+  const [baseContent, setBaseContent] = useState<SiteContent | null>(null);
+  const [basePresets, setBasePresets] = useState<PresetDoc[] | null>(null);
+  const J = JSON.stringify;
 
-  const dirtyContent = useMemo(() => content !== null && JSON.stringify(content) !== JSON.stringify(site.content), [content, site.content]);
-  const dirtyPresets = useMemo(() => presets !== null && JSON.stringify(presets) !== JSON.stringify(site.presets), [presets, site.presets]);
+  useEffect(() => subscribeSite(), []);
+
+  // Take a working copy only after BOTH docs have answered from Firestore (not from cache/defaults)
+  useEffect(() => {
+    if (!site.loaded) return;
+    if (content === null || (baseContent && J(content) === J(baseContent) && J(site.content) !== J(baseContent))) {
+      // first load, or server changed while the admin hasn't touched this part → follow the server
+      setContent(site.content); setBaseContent(site.content);
+    }
+    if (presets === null || (basePresets && J(presets) === J(basePresets) && J(site.presets) !== J(basePresets))) {
+      setPresets(site.presets); setBasePresets(site.presets);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [site.loaded, site.content, site.presets]);
+
+  const dirtyContent = useMemo(() => content !== null && baseContent !== null && J(content) !== J(baseContent), [content, baseContent]);
+  const dirtyPresets = useMemo(() => presets !== null && basePresets !== null && J(presets) !== J(basePresets), [presets, basePresets]);
   const dirty = dirtyContent || dirtyPresets;
+  /** Someone else (another tab/device) saved after we started editing */
+  const remoteChanged = (dirtyContent && J(site.content) !== J(baseContent)) || (dirtyPresets && J(site.presets) !== J(basePresets));
 
   useEffect(() => {
     const h = (e: BeforeUnloadEvent) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } };
@@ -142,7 +159,11 @@ function Dashboard({ user }: { user: User }) {
     setSaving(true);
     try {
       const by = user.email ?? "admin";
-      await Promise.all([dirtyContent && saveContent(content, by), dirtyPresets && savePresets(presets, by)]);
+      // Only write the part that was actually edited
+      if (dirtyContent) await saveContent(content, by);
+      if (dirtyPresets) await savePresets(presets, by);
+      if (dirtyContent) setBaseContent(content);
+      if (dirtyPresets) setBasePresets(presets);
       flash(true, "บันทึกแล้ว — หน้าเว็บอัปเดตทันที");
     } catch (e) {
       const m = (e as Error).message;
@@ -152,7 +173,10 @@ function Dashboard({ user }: { user: User }) {
     }
   };
 
-  const discard = () => { setContent(site.content); setPresets(site.presets); };
+  const discard = () => {
+    setContent(site.content); setBaseContent(site.content);
+    setPresets(site.presets); setBasePresets(site.presets);
+  };
   const resetDefaults = () => {
     if (!confirm(tab === "content" ? "คืนค่าข้อความทั้งหมดเป็นค่าเริ่มต้น? (ยังไม่บันทึกจนกว่าจะกดบันทึก)" : "คืนค่าพรีเซ็ตทั้งหมดเป็นค่าเริ่มต้น? (ยังไม่บันทึกจนกว่าจะกดบันทึก)")) return;
     if (tab === "content") setContent(DEFAULT_CONTENT); else setPresets(DEFAULT_PRESETS);
@@ -204,7 +228,10 @@ function Dashboard({ user }: { user: User }) {
       <div className={`fixed bottom-4 left-1/2 z-50 w-[min(720px,calc(100%-24px))] -translate-x-1/2 transition-all duration-300 ${dirty ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-6 opacity-0"}`}>
         <div className="panel flex items-center gap-3 p-3 pl-5">
           <i className="dot busy" />
-          <span className="flex-1 text-sm">มีการแก้ไขที่ยังไม่บันทึก</span>
+          <span className="flex-1 text-sm">
+            มีการแก้ไขที่ยังไม่บันทึก
+            {remoteChanged && <span className="block text-[.74rem] text-warn">มีการบันทึกจากที่อื่นระหว่างนี้ — กดบันทึกจะใช้ข้อมูลของหน้านี้แทน</span>}
+          </span>
           <button className="btn btn-ghost btn-sm" onClick={discard} disabled={saving}>ยกเลิก</button>
           <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} บันทึก

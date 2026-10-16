@@ -23,6 +23,8 @@ export default function Home() {
   const error = useStore((s) => s.error);
   const setError = useStore((s) => s.setError);
   const c = useSite((s) => s.content);
+  // Hide site text until real data (Firestore or this device's cache) is in → no flash of old/default values
+  const ready = useSite((s) => s.ready);
 
   useEffect(() => { document.title = `${c.siteName} — ${c.tagline}`; }, [c.siteName, c.tagline]);
 
@@ -49,6 +51,7 @@ export default function Home() {
     <>
       <SiteBoot />
       <Background />
+      <div className={`transition-opacity duration-300 ${ready ? "opacity-100" : "opacity-0"}`} aria-busy={!ready}>
       <Navbar />
       <Hero />
       <Filmstrip />
@@ -73,6 +76,7 @@ export default function Home() {
 
       <Sections />
       <Footer />
+      </div>
 
       {error && !file && (
         <div role="alert" className="pop fixed bottom-6 left-1/2 z-[300] flex max-w-[92vw] -translate-x-1/2 items-center gap-3 rounded-xl bg-inverse px-5 py-3 text-[.85rem] font-medium text-inverse-fg">
