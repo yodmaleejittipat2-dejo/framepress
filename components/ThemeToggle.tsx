@@ -1,6 +1,7 @@
 "use client";
 import { Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useT } from "@/lib/i18n";
 
 export function useTheme() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -18,8 +19,9 @@ export function useTheme() {
 
 export default function ThemeToggle() {
   const { theme, toggle } = useTheme();
+  const t = useT();
   return (
-    <button className="icon-btn" onClick={toggle} aria-label={theme === "dark" ? "เปลี่ยนเป็นโหมดสว่าง" : "เปลี่ยนเป็นโหมดมืด"} title={theme === "dark" ? "โหมดสว่าง" : "โหมดมืด"}>
+    <button className="icon-btn" onClick={toggle} aria-label={theme === "dark" ? t("theme.toLight") : t("theme.toDark")} title={theme === "dark" ? t("theme.toLight") : t("theme.toDark")}>
       {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
     </button>
   );

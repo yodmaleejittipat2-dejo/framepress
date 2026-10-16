@@ -44,3 +44,23 @@ export interface Result {
   mime: string;
   elapsed: number; // seconds
 }
+
+export interface Trim { start: number; end: number } // seconds
+
+export interface Sample {
+  url: string;
+  size: number;
+  seconds: number; // length of the test clip
+  estimate: number; // extrapolated bytes for the whole (trimmed) output
+  mime: string;
+}
+
+export type QueueStatus = "waiting" | "running" | "done" | "error";
+export interface QueueItem {
+  id: string;
+  file: File;
+  status: QueueStatus;
+  progress: number;
+  result?: Result;
+  error?: string;
+}

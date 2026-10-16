@@ -1,13 +1,39 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Website content + presets: everyone can read, only the admin account can write.
+
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == "jittipat_admin@framepress.app";
+    }
+
+    // Website content (TH + EN) + presets: everyone can read, only the admin can write.
     match /site/{docId} {
       allow read: if true;
-      allow write: if request.auth != null
-                   && request.auth.token.email == "jittipat_admin@framepress.app"
-                   && docId in ["content", "presets"];
+      allow write: if isAdmin() && docId in ["content", "content_en", "presets"];
     }
+
+    // Version history for rollback — admin only.
+    match /history/{id} {
+      allow read, delete: if isAdmin();
+      allow create: if isAdmin()
+                    && request.resource.data.type in ["content", "content_en", "presets"];
+    }
+
+    // Public counter: anyone may add exactly +1 file and a sane number of bytes. Nothing else.
+    match /stats/global {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(["files", "bytesSaved"])
+                    && request.resource.data.files == 1
+                    && request.resource.data.bytesSaved is int
+                    && request.resource.data.bytesSaved >= 0
+                    && request.resource.data.bytesSaved < 20000000000;
+      allow update: if request.resource.data.keys().hasOnly(["files", "bytesSaved"])
+                    && request.resource.data.files == resource.data.files + 1
+                    && request.resource.data.bytesSaved is int
+                    && request.resource.data.bytesSaved >= resource.data.bytesSaved
+                    && request.resource.data.bytesSaved - resource.data.bytesSaved < 20000000000;
+    }
+
     // Everything else is locked.
     match /{document=**} {
       allow read, write: if false;

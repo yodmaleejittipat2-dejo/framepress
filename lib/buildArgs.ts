@@ -1,4 +1,4 @@
-import type { Container, MediaMeta, Settings } from "./types";
+import type { Container, MediaMeta, Settings, Trim } from "./types";
 
 export interface BuiltCommand {
   args: string[];
@@ -73,11 +73,19 @@ export function targetVideoKbps(sizeMB: number, durationSec: number, audioKbps: 
 /**
  * @param threads  pass a number only on the multi-thread core (explicit thread count is required there)
  */
-export function buildArgs(inputName: string, base: string, raw: Settings, meta: MediaMeta | null, threads?: number): BuiltCommand {
+export function buildArgs(inputName: string, base: string, raw: Settings, meta: MediaMeta | null, threads?: number, trim?: Trim | null, rateDuration?: number): BuiltCommand {
   const { settings: s, warnings } = resolveCompat(raw);
   const ext = s.container;
   const outName = `output.${ext}`;
-  const args: string[] = ["-hide_banner", "-y", "-i", inputName];
+  const args: string[] = ["-hide_banner", "-y"];
+  // Trim: input-side -ss is fast and (when re-encoding) frame-accurate; -t limits the output length
+  const tStart = trim ? Math.max(0, trim.start) : 0;
+  const tLen = trim ? Math.max(0.1, trim.end - trim.start) : null;
+  if (trim && tStart > 0) args.push("-ss", tStart.toFixed(3));
+  args.push("-i", inputName);
+  if (tLen != null) args.push("-t", tLen.toFixed(3));
+  // bitrate budget is spread over this many seconds (a 5-s test still sizes for the whole clip)
+  const outDuration = rateDuration ?? tLen ?? meta?.duration ?? 0;
 
   // ---- Video ----
   const vf: string[] = [];
@@ -90,7 +98,7 @@ export function buildArgs(inputName: string, base: string, raw: Settings, meta: 
 
   const audioKbps = s.acodec === "none" ? 0 : parseInt(s.abitrate, 10);
   if (s.rateMode === "target") {
-    let kbps = targetVideoKbps(s.targetSizeMB, meta?.duration ?? 0, audioKbps);
+    let kbps = targetVideoKbps(s.targetSizeMB, outDuration, audioKbps);
     // Short clips: never spend more bits than the source had (would make the file bigger)
     if (meta?.bitrate) kbps = Math.min(kbps, Math.max(200, meta.bitrate - audioKbps));
     args.push("-b:v", `${kbps}k`, "-maxrate", `${kbps}k`, "-bufsize", `${kbps * 2}k`);

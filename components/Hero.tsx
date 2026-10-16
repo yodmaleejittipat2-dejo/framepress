@@ -1,6 +1,8 @@
 "use client";
-import { ArrowRight, ShieldCheck } from "lucide-react";
-import { useSite } from "@/lib/site";
+import { ArrowRight, ShieldCheck, TrendingDown } from "lucide-react";
+import { useContent, useSite } from "@/lib/site";
+import { useLang, useT } from "@/lib/i18n";
+import { formatBytes } from "@/lib/format";
 import Corners from "./Corners";
 
 function Title({ text, highlight }: { text: string; highlight: string }) {
@@ -17,6 +19,7 @@ function Title({ text, highlight }: { text: string; highlight: string }) {
 
 /** Decorative "viewfinder" preview — shows what the tool does at a glance. */
 function Viewfinder() {
+  const lang = useLang((s) => s.lang);
   return (
     <div className="panel corners fade-up p-4 sm:p-5" style={{ ["--d" as string]: ".25s" }} aria-hidden>
       <Corners />
@@ -43,13 +46,28 @@ function Viewfinder() {
           <div className="bar"><i style={{ width: "13%" }} /></div>
         </div>
       </div>
-      <p className="mt-3 mono text-[.62rem] text-faint">* ตัวอย่างประกอบ</p>
+      <p className="mt-3 mono text-[.62rem] text-faint">* {lang === "en" ? "illustration" : "ตัวอย่างประกอบ"}</p>
     </div>
   );
 }
 
+/** "1,234 files compressed · 56 GB saved" — live from Firestore */
+function StatsChip() {
+  const t = useT();
+  const lang = useLang((s) => s.lang);
+  const stats = useSite((s) => s.stats);
+  const show = useSite((s) => s.content.showStats);
+  if (!show || !stats || stats.files < 1) return null;
+  return (
+    <span className="chip !border-accent/40 !bg-accent-soft">
+      <TrendingDown size={14} className="-ml-1 text-accent-text" />
+      {t("stats.files", { n: stats.files.toLocaleString(lang === "th" ? "th-TH" : "en-US") })} · {t("stats.saved", { size: formatBytes(stats.bytesSaved) })}
+    </span>
+  );
+}
+
 export default function Hero() {
-  const c = useSite((s) => s.content);
+  const c = useContent();
   return (
     <header id="top" className="relative pt-28 sm:pt-32">
       {c.announcement && (
@@ -74,6 +92,7 @@ export default function Hero() {
             {c.chips.map((t, i) => (
               <span key={i} className="chip">{i === 0 && <ShieldCheck size={14} className="-ml-1" />}{t}</span>
             ))}
+            <StatsChip />
           </div>
         </div>
         <Viewfinder />

@@ -1,15 +1,17 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
-import { AlertTriangle, Check, ExternalLink, Eye, EyeOff, FileText, Layers, Loader2, LogIn, LogOut, RotateCcw, Save, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Check, ExternalLink, Eye, EyeOff, FileText, History, Layers, Loader2, LogIn, LogOut, RotateCcw, Save, ShieldCheck } from "lucide-react";
 import Background from "@/components/Background";
 import BrandMark from "@/components/BrandMark";
 import ThemeToggle from "@/components/ThemeToggle";
 import ContentEditor from "@/components/admin/ContentEditor";
 import PresetEditor from "@/components/admin/PresetEditor";
+import HistoryPanel from "@/components/admin/HistoryPanel";
+import { Switch } from "@/components/admin/fields";
 import { ADMIN_EMAIL, ADMIN_USERNAME, firebaseConfigured, getFirebase, usernameToEmail } from "@/lib/firebase";
-import { saveContent, savePresets, subscribeSite, useSite } from "@/lib/site";
-import { DEFAULT_CONTENT, DEFAULT_PRESETS, type PresetDoc, type SiteContent } from "@/lib/content";
+import { saveContent, savePresets, subscribeSite, useSite, type HistoryEntry } from "@/lib/site";
+import { DEFAULT_CONTENT, DEFAULT_CONTENT_EN, DEFAULT_PRESETS, mergeContent, sanitizePresets, type PresetDoc, type SiteContent } from "@/lib/content";
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
@@ -109,40 +111,40 @@ function Login() {
   );
 }
 
+/** A working copy of one Firestore doc. Dirty = copy ≠ the server value it started from. */
+function useDraft<T>(live: T, loaded: boolean) {
+  const J = JSON.stringify;
+  const [value, setValue] = useState<T | null>(null);
+  const [base, setBase] = useState<T | null>(null);
+  useEffect(() => {
+    if (!loaded) return;
+    // first load, or the server changed while this part is untouched → follow the server
+    if (value === null || (base !== null && J(value) === J(base) && J(live) !== J(base))) { setValue(live); setBase(live); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, live]);
+  const dirty = value !== null && base !== null && J(value) !== J(base);
+  return {
+    value, set: setValue, dirty,
+    remoteChanged: dirty && J(live) !== J(base),
+    markSaved: (v: T) => setBase(v),
+    discard: () => { setValue(live); setBase(live); },
+  };
+}
+
 function Dashboard({ user }: { user: User }) {
   const site = useSite();
-  const [tab, setTab] = useState<"content" | "presets">("content");
-  const [content, setContent] = useState<SiteContent | null>(null);
-  const [presets, setPresets] = useState<PresetDoc[] | null>(null);
+  const [tab, setTab] = useState<"content" | "presets" | "history">("content");
+  const [lang, setLang] = useState<"th" | "en">("th");
   const [saving, setSaving] = useState(false);
+  const [historyKey, setHistoryKey] = useState(0);
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
 
-  // `base*` = the server values our working copy started from. Dirty = working copy ≠ base,
-  // so a late-arriving snapshot can never make stale data look "edited" (and get saved back).
-  const [baseContent, setBaseContent] = useState<SiteContent | null>(null);
-  const [basePresets, setBasePresets] = useState<PresetDoc[] | null>(null);
-  const J = JSON.stringify;
-
   useEffect(() => subscribeSite(), []);
-
-  // Take a working copy only after BOTH docs have answered from Firestore (not from cache/defaults)
-  useEffect(() => {
-    if (!site.loaded) return;
-    if (content === null || (baseContent && J(content) === J(baseContent) && J(site.content) !== J(baseContent))) {
-      // first load, or server changed while the admin hasn't touched this part → follow the server
-      setContent(site.content); setBaseContent(site.content);
-    }
-    if (presets === null || (basePresets && J(presets) === J(basePresets) && J(site.presets) !== J(basePresets))) {
-      setPresets(site.presets); setBasePresets(site.presets);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [site.loaded, site.content, site.presets]);
-
-  const dirtyContent = useMemo(() => content !== null && baseContent !== null && J(content) !== J(baseContent), [content, baseContent]);
-  const dirtyPresets = useMemo(() => presets !== null && basePresets !== null && J(presets) !== J(basePresets), [presets, basePresets]);
-  const dirty = dirtyContent || dirtyPresets;
-  /** Someone else (another tab/device) saved after we started editing */
-  const remoteChanged = (dirtyContent && J(site.content) !== J(baseContent)) || (dirtyPresets && J(site.presets) !== J(basePresets));
+  const th = useDraft<SiteContent>(site.content, site.loaded);
+  const en = useDraft<SiteContent>(site.contentEn, site.loaded);
+  const pr = useDraft<PresetDoc[]>(site.presets, site.loaded);
+  const dirty = th.dirty || en.dirty || pr.dirty;
+  const remoteChanged = th.remoteChanged || en.remoteChanged || pr.remoteChanged;
 
   useEffect(() => {
     const h = (e: BeforeUnloadEvent) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } };
@@ -153,17 +155,16 @@ function Dashboard({ user }: { user: User }) {
   const flash = (ok: boolean, msg: string) => { setToast({ ok, msg }); setTimeout(() => setToast(null), 3500); };
 
   const save = async () => {
-    if (!content || !presets) return;
-    const badPreset = presets.find((p) => !p.title.trim());
-    if (badPreset) return flash(false, "มีพรีเซ็ตที่ยังไม่มีชื่อ");
+    if (!th.value || !en.value || !pr.value) return;
+    if (pr.value.find((p) => !p.title.trim())) return flash(false, "มีพรีเซ็ตที่ยังไม่มีชื่อ");
     setSaving(true);
     try {
       const by = user.email ?? "admin";
-      // Only write the part that was actually edited
-      if (dirtyContent) await saveContent(content, by);
-      if (dirtyPresets) await savePresets(presets, by);
-      if (dirtyContent) setBaseContent(content);
-      if (dirtyPresets) setBasePresets(presets);
+      // Only write the parts that were actually edited
+      if (th.dirty) { await saveContent(th.value, by, "th"); th.markSaved(th.value); }
+      if (en.dirty) { await saveContent(en.value, by, "en"); en.markSaved(en.value); }
+      if (pr.dirty) { await savePresets(pr.value, by); pr.markSaved(pr.value); }
+      setHistoryKey((k) => k + 1);
       flash(true, "บันทึกแล้ว — หน้าเว็บอัปเดตทันที");
     } catch (e) {
       const m = (e as Error).message;
@@ -173,14 +174,38 @@ function Dashboard({ user }: { user: User }) {
     }
   };
 
-  const discard = () => {
-    setContent(site.content); setBaseContent(site.content);
-    setPresets(site.presets); setBasePresets(site.presets);
-  };
+  const discard = () => { th.discard(); en.discard(); pr.discard(); };
   const resetDefaults = () => {
-    if (!confirm(tab === "content" ? "คืนค่าข้อความทั้งหมดเป็นค่าเริ่มต้น? (ยังไม่บันทึกจนกว่าจะกดบันทึก)" : "คืนค่าพรีเซ็ตทั้งหมดเป็นค่าเริ่มต้น? (ยังไม่บันทึกจนกว่าจะกดบันทึก)")) return;
-    if (tab === "content") setContent(DEFAULT_CONTENT); else setPresets(DEFAULT_PRESETS);
+    const what = tab === "content" ? (lang === "en" ? "ข้อความภาษาอังกฤษ" : "ข้อความภาษาไทย") : "พรีเซ็ต";
+    if (!confirm(`คืนค่า${what}ทั้งหมดเป็นค่าเริ่มต้น? (ยังไม่บันทึกจนกว่าจะกดบันทึก)`)) return;
+    if (tab === "content") (lang === "en" ? en : th).set(lang === "en" ? DEFAULT_CONTENT_EN : DEFAULT_CONTENT);
+    else pr.set(DEFAULT_PRESETS);
   };
+
+  const exportJson = () => {
+    const data = { app: "framepress", version: 1, exportedAt: new Date().toISOString(), content: th.value, contentEn: en.value, presets: pr.value };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+    Object.assign(document.createElement("a"), { href: url, download: `framepress-backup-${new Date().toISOString().slice(0, 10)}.json` }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  };
+  const importJson = (raw: unknown) => {
+    const d = raw as { content?: Partial<SiteContent>; contentEn?: Partial<SiteContent>; presets?: unknown };
+    if (!d || typeof d !== "object" || (!d.content && !d.contentEn && !d.presets)) return flash(false, "ไฟล์นี้ไม่ใช่ไฟล์สำรองของ Framepress");
+    if (d.content) th.set(mergeContent(d.content));
+    if (d.contentEn) en.set(mergeContent(d.contentEn, DEFAULT_CONTENT_EN));
+    if (d.presets) pr.set(sanitizePresets(d.presets));
+    flash(true, "นำเข้าแล้ว — ตรวจดูแล้วกดบันทึกเพื่อใช้งาน");
+  };
+  const restore = (e: HistoryEntry) => {
+    if (!confirm("โหลดเวอร์ชันนี้มาแก้ไข? (ยังไม่บันทึกจนกว่าจะกดบันทึก)")) return;
+    if (e.type === "presets") { pr.set(sanitizePresets(e.data)); setTab("presets"); }
+    else if (e.type === "content_en") { en.set(mergeContent(e.data as Partial<SiteContent>, DEFAULT_CONTENT_EN)); setLang("en"); setTab("content"); }
+    else { th.set(mergeContent(e.data as Partial<SiteContent>)); setLang("th"); setTab("content"); }
+    flash(true, "โหลดเวอร์ชันเก่าแล้ว — กดบันทึกเพื่อใช้งาน");
+  };
+
+  const ready = th.value && en.value && pr.value;
+  const showStats = th.value?.showStats ?? true;
 
   return (
     <Shell>
@@ -200,29 +225,48 @@ function Dashboard({ user }: { user: User }) {
           <h1 className="sec-title mt-3">จัดการเว็บไซต์</h1>
           <p className="mt-2 text-sm text-muted">
             แหล่งข้อมูล: {site.source === "firebase" ? "Firestore (ออนไลน์)" : "ค่าเริ่มต้นในโค้ด — กดบันทึกครั้งแรกเพื่อสร้างข้อมูลใน Firestore"}
+            {site.stats && <> · บีบไปแล้ว <b className="text-fg">{site.stats.files.toLocaleString()}</b> ไฟล์</>}
           </p>
         </div>
         <div className="seg">
-          <button aria-selected={tab === "content"} onClick={() => setTab("content")}><FileText size={14} /> ข้อความเว็บ {dirtyContent && <i className="dot busy" />}</button>
-          <button aria-selected={tab === "presets"} onClick={() => setTab("presets")}><Layers size={14} /> พรีเซ็ต {dirtyPresets && <i className="dot busy" />}</button>
+          <button aria-selected={tab === "content"} onClick={() => setTab("content")}><FileText size={14} /> ข้อความเว็บ {(th.dirty || en.dirty) && <i className="dot busy" />}</button>
+          <button aria-selected={tab === "presets"} onClick={() => setTab("presets")}><Layers size={14} /> พรีเซ็ต {pr.dirty && <i className="dot busy" />}</button>
+          <button aria-selected={tab === "history"} onClick={() => setTab("history")}><History size={14} /> ประวัติ</button>
         </div>
       </div>
 
       {site.error && <p className="mt-6 rounded-xl border border-err/40 bg-err/10 p-3 text-sm text-err">อ่านข้อมูลไม่สำเร็จ: {site.error}</p>}
 
       <div className="mt-6">
-        {!content || !presets ? (
+        {!ready ? (
           <div className="panel-soft flex items-center gap-3 p-6 text-sm text-muted"><Loader2 size={16} className="animate-spin" /> กำลังโหลดข้อมูล…</div>
         ) : tab === "content" ? (
-          <ContentEditor value={content} onChange={setContent} />
+          <>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="seg" role="tablist" aria-label="ภาษา">
+                <button aria-selected={lang === "th"} onClick={() => setLang("th")}>ภาษาไทย {th.dirty && <i className="dot busy" />}</button>
+                <button aria-selected={lang === "en"} onClick={() => setLang("en")}>English {en.dirty && <i className="dot busy" />}</button>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <Switch checked={showStats} onChange={(v) => th.set({ ...th.value!, showStats: v })} label="แสดงตัวนับ “บีบไปแล้ว X ไฟล์” บนหน้าแรก" />
+              </label>
+            </div>
+            {lang === "th"
+              ? <ContentEditor key="th" value={th.value!} onChange={th.set} />
+              : <ContentEditor key="en" value={en.value!} onChange={en.set} />}
+          </>
+        ) : tab === "presets" ? (
+          <PresetEditor value={pr.value!} onChange={pr.set} />
         ) : (
-          <PresetEditor value={presets} onChange={setPresets} />
+          <HistoryPanel refreshKey={historyKey} onRestore={restore} onExport={exportJson} onImport={importJson} />
         )}
       </div>
 
-      <div className="mt-6 flex justify-end">
-        <button className="btn btn-ghost btn-sm" onClick={resetDefaults}><RotateCcw size={14} /> คืนค่าเริ่มต้น ({tab === "content" ? "ข้อความ" : "พรีเซ็ต"})</button>
-      </div>
+      {tab !== "history" && (
+        <div className="mt-6 flex justify-end">
+          <button className="btn btn-ghost btn-sm" onClick={resetDefaults}><RotateCcw size={14} /> คืนค่าเริ่มต้น ({tab === "content" ? (lang === "en" ? "ข้อความ EN" : "ข้อความไทย") : "พรีเซ็ต"})</button>
+        </div>
+      )}
 
       {/* sticky save bar */}
       <div className={`fixed bottom-4 left-1/2 z-50 w-[min(720px,calc(100%-24px))] -translate-x-1/2 transition-all duration-300 ${dirty ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-6 opacity-0"}`}>
@@ -230,6 +274,7 @@ function Dashboard({ user }: { user: User }) {
           <i className="dot busy" />
           <span className="flex-1 text-sm">
             มีการแก้ไขที่ยังไม่บันทึก
+            <span className="block text-[.72rem] text-muted">{[th.dirty && "ข้อความไทย", en.dirty && "ข้อความ EN", pr.dirty && "พรีเซ็ต"].filter(Boolean).join(" · ")}</span>
             {remoteChanged && <span className="block text-[.74rem] text-warn">มีการบันทึกจากที่อื่นระหว่างนี้ — กดบันทึกจะใช้ข้อมูลของหน้านี้แทน</span>}
           </span>
           <button className="btn btn-ghost btn-sm" onClick={discard} disabled={saving}>ยกเลิก</button>

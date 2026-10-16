@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { DEFAULT_SETTINGS } from "./presets";
 import type { PresetDoc } from "./content";
-import type { MediaMeta, Result, Settings, Status } from "./types";
+import type { MediaMeta, QueueItem, Result, Sample, Settings, Status, Trim } from "./types";
 
 interface State {
   status: Status;
@@ -23,6 +23,16 @@ interface State {
   command: string;
   result: Result | null;
   error: string | null;
+  /** Single-file trim range (null = whole clip) */
+  trim: Trim | null;
+  /** Result of the "test 5 seconds" encode */
+  sample: Sample | null;
+  sampling: boolean;
+  /** Batch mode: more than one file */
+  queue: QueueItem[];
+  queueRunning: boolean;
+  /** Extra inputs for command mode (logo.png, music.mp3 …) */
+  extraFiles: File[];
 
   setStatus: (s: Status) => void;
   setEngine: (e: Partial<State["engine"]>) => void;
@@ -41,6 +51,13 @@ interface State {
   setError: (e: string | null) => void;
   startJob: () => void;
   resetAll: () => void;
+  setTrim: (t: Trim | null) => void;
+  setSample: (s: Sample | null) => void;
+  addToQueue: (files: File[]) => void;
+  updateQueueItem: (id: string, patch: Partial<QueueItem>) => void;
+  removeFromQueue: (id: string) => void;
+  clearQueue: () => void;
+  setExtraFiles: (f: File[]) => void;
 }
 
 const MAX_LOG = 1500;
@@ -63,6 +80,12 @@ export const useStore = create<State>((set, get) => ({
   command: "",
   result: null,
   error: null,
+  trim: null,
+  sample: null,
+  sampling: false,
+  queue: [],
+  queueRunning: false,
+  extraFiles: [],
 
   setStatus: (status) => set({ status }),
   setEngine: (e) => set({ engine: { ...get().engine, ...e } }),
@@ -100,10 +123,32 @@ export const useStore = create<State>((set, get) => ({
     get().setResult(null);
     set({ progress: 0, eta: null, liveSize: 0, jobDuration: null, startedAt: Date.now(), error: null, status: "processing" });
   },
+  setTrim: (trim) => { get().setSample(null); set({ trim }); },
+  setSample: (sample) => {
+    const prev = get().sample;
+    if (prev && prev.url !== sample?.url) URL.revokeObjectURL(prev.url);
+    set({ sample });
+  },
+  addToQueue: (files) => {
+    const items: QueueItem[] = files.map((file) => ({ id: Math.random().toString(36).slice(2, 10), file, status: "waiting", progress: 0 }));
+    set({ queue: [...get().queue, ...items] });
+  },
+  updateQueueItem: (id, patch) => set({ queue: get().queue.map((q) => (q.id === id ? { ...q, ...patch } : q)) }),
+  removeFromQueue: (id) => {
+    const it = get().queue.find((q) => q.id === id);
+    if (it?.result) URL.revokeObjectURL(it.result.url);
+    set({ queue: get().queue.filter((q) => q.id !== id) });
+  },
+  clearQueue: () => {
+    get().queue.forEach((q) => q.result && URL.revokeObjectURL(q.result.url));
+    set({ queue: [], queueRunning: false });
+  },
+  setExtraFiles: (extraFiles) => set({ extraFiles }),
   resetAll: () => {
     const { sourceUrl, result } = get();
     if (sourceUrl) URL.revokeObjectURL(sourceUrl);
     if (result) URL.revokeObjectURL(result.url);
+    get().setSample(null);
     set({
       status: get().engine.loaded ? "idle" : "idle",
       file: null,
@@ -116,6 +161,7 @@ export const useStore = create<State>((set, get) => ({
       command: "",
       result: null,
       error: null,
+      trim: null,
     });
   },
 }));

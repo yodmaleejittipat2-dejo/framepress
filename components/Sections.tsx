@@ -1,12 +1,12 @@
 "use client";
 import { ArrowRight, Plus } from "lucide-react";
-import { useSite } from "@/lib/site";
+import { useContent } from "@/lib/site";
 import Corners from "./Corners";
 
 const W = "mx-auto w-[min(1240px,calc(100%-24px))]";
 
 export default function Sections() {
-  const c = useSite((s) => s.content);
+  const c = useContent();
   return (
     <>
       {/* Features */}

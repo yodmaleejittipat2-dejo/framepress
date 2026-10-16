@@ -1,8 +1,8 @@
 "use client";
-import { useSite } from "@/lib/site";
+import { useContent } from "@/lib/site";
 
 export default function Filmstrip() {
-  const items = useSite((s) => s.content.marquee);
+  const items = useContent().marquee;
   if (!items.length) return null;
   const row = [...items, ...items, ...items];
   return (

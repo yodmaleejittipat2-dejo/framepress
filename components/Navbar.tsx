@@ -2,9 +2,11 @@
 import { useState } from "react";
 import { ArrowRight, Menu, X } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { useSite } from "@/lib/site";
+import { useContent } from "@/lib/site";
+import { useT } from "@/lib/i18n";
 import BrandMark from "./BrandMark";
 import ThemeToggle from "./ThemeToggle";
+import LangToggle from "./LangToggle";
 
 const LINKS = [
   ["#compress", "Compress"],
@@ -14,10 +16,11 @@ const LINKS = [
 ] as const;
 
 export default function Navbar() {
+  const t = useT();
   const status = useStore((s) => s.status);
   const engine = useStore((s) => s.engine);
   const progress = useStore((s) => s.progress);
-  const { siteName, tagline } = useSite((s) => s.content);
+  const { siteName, tagline } = useContent();
   const [open, setOpen] = useState(false);
 
   const busy = status === "loading-engine" || status === "probing" || status === "processing";
@@ -43,15 +46,16 @@ export default function Navbar() {
           {LINKS.map(([h, l]) => <a key={h} href={h}>{l}</a>)}
         </div>
         <div className="ml-auto flex items-center gap-2 min-[901px]:ml-0">
-          <span className="tag hidden md:inline-flex" title={engine.source ?? undefined}>
+          <span className="tag hidden lg:inline-flex" title={engine.source ?? undefined}>
             <i className={`dot ${busy ? "busy" : engine.loaded ? "live" : "idle"}`} /> {label}
           </span>
+          <LangToggle />
           <ThemeToggle />
-          <button className="icon-btn min-[901px]:hidden" onClick={() => setOpen((o) => !o)} aria-label="เมนู" aria-expanded={open}>
+          <button className="icon-btn min-[901px]:hidden" onClick={() => setOpen((o) => !o)} aria-label={t("nav.menu")} aria-expanded={open}>
             {open ? <X size={17} /> : <Menu size={17} />}
           </button>
           <a href="#compress" className="btn btn-primary btn-sm hidden sm:inline-flex">
-            เริ่มเลย <ArrowRight size={15} />
+            {t("nav.start")} <ArrowRight size={15} />
           </a>
         </div>
         {open && (

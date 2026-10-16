@@ -3,7 +3,8 @@ import { useMemo, useState } from "react";
 import { AlertTriangle, Check, Clapperboard, Music, Package, SlidersHorizontal, Sparkles, SquareTerminal, VolumeX } from "lucide-react";
 import CommandEditor from "./CommandEditor";
 import { useStore } from "@/lib/store";
-import { useSite } from "@/lib/site";
+import { presetLabel, useSite } from "@/lib/site";
+import { useLang, useT } from "@/lib/i18n";
 import { resolveCompat, targetVideoKbps } from "@/lib/buildArgs";
 import type { Settings } from "@/lib/types";
 import PresetIcon from "./PresetIcon";
@@ -46,6 +47,9 @@ const Hint = ({ children, warn }: { children: React.ReactNode; warn?: boolean })
 
 export default function SettingsPanel() {
   const [tab, setTab] = useState<Tab>("presets");
+  const t = useT();
+  const lang = useLang((st) => st.lang);
+  const trim = useStore((st) => st.trim);
   const s = useStore((st) => st.settings);
   const meta = useStore((st) => st.meta);
   const patch = useStore((st) => st.patchSettings);
@@ -60,31 +64,32 @@ export default function SettingsPanel() {
 
   const groups = useMemo(() => {
     const m = new Map<string, typeof presets>();
-    presets.filter((p) => p.enabled).forEach((p) => m.set(p.group, [...(m.get(p.group) ?? []), p]));
+    presets.filter((p) => p.enabled).forEach((p) => { const g = presetLabel(p, lang).group; m.set(g, [...(m.get(g) ?? []), p]); });
     return [...m.entries()];
-  }, [presets]);
+  }, [presets, lang]);
   const active = presets.find((p) => p.id === s.presetId);
 
   const crfFill = ((s.crf - 18) / 14) * 100;
   const audioKbps = s.acodec === "none" ? 0 : parseInt(s.abitrate, 10);
-  const vKbps = meta?.duration ? targetVideoKbps(s.targetSizeMB, meta.duration, audioKbps) : null;
+  const outLen = trim ? trim.end - trim.start : meta?.duration ?? 0;
+  const vKbps = outLen ? targetVideoKbps(s.targetSizeMB, outLen, audioKbps) : null;
 
   return (
     <aside id="presets" className="panel scroll-mt-28 p-5 sm:p-6 lg:sticky lg:top-24" aria-label="Settings">
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="kicker">Settings</div>
-          <h3 className="mt-2 flex items-center gap-2 text-lg font-semibold"><SlidersHorizontal size={18} /> ตั้งค่าการบีบอัด</h3>
+          <h3 className="mt-2 flex items-center gap-2 text-lg font-semibold"><SlidersHorizontal size={18} /> {t("st.title")}</h3>
         </div>
         {mode === "command" ? <span className="tag tag-accent"><SquareTerminal size={12} /> CLI</span>
-          : active ? <span className="tag tag-accent"><Check size={12} /> {active.title}</span> : <span className="tag">Custom</span>}
+          : active ? <span className="tag tag-accent"><Check size={12} /> {presetLabel(active, lang).title}</span> : <span className="tag">Custom</span>}
       </div>
 
       {/* mode switch: guided settings vs. raw ffmpeg command */}
-      <div className="mt-5 grid grid-cols-2 gap-2" role="radiogroup" aria-label="โหมดการตั้งค่า">
+      <div className="mt-5 grid grid-cols-2 gap-2" role="radiogroup" aria-label={t("st.title")}>
         {([
-          ["preset", SlidersHorizontal, "โหมดง่าย", "พรีเซ็ต + ปรับค่า"],
-          ["command", SquareTerminal, "คำสั่ง FFmpeg", "วางคำสั่งเอง"],
+          ["preset", SlidersHorizontal, t("st.easy"), t("st.easySub")],
+          ["command", SquareTerminal, t("st.cmd"), t("st.cmdSub")],
         ] as const).map(([m, Icon, title, sub]) => (
           <button key={m} type="button" role="radio" aria-checked={mode === m} disabled={locked} onClick={() => setMode(m)}
             className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition ${mode === m ? "border-accent bg-accent-soft" : "border-line bg-surface hover:border-line-strong"}`}>
@@ -109,7 +114,7 @@ export default function SettingsPanel() {
       <fieldset disabled={locked} className={`mt-5 space-y-5 ${locked ? "pointer-events-none opacity-50" : ""}`}>
         {tab === "presets" && (
           <>
-            {groups.length === 0 && <Hint>ยังไม่มีพรีเซ็ต — ตั้งค่าเองได้ในแท็บ Video / Audio</Hint>}
+            {groups.length === 0 && <Hint>{t("st.noPresets")}</Hint>}
             {groups.map(([g, items]) => (
               <Field key={g} label={g}>
                 <div className="grid gap-2">
@@ -122,8 +127,8 @@ export default function SettingsPanel() {
                           <PresetIcon name={p.icon} />
                         </span>
                         <span className="min-w-0">
-                          <b className="block text-sm font-semibold">{p.title}</b>
-                          <span className={`block truncate text-[.75rem] ${on ? "opacity-70" : "text-muted"}`}>{p.subtitle}</span>
+                          <b className="block text-sm font-semibold">{presetLabel(p, lang).title}</b>
+                          <span className={`block truncate text-[.75rem] ${on ? "opacity-70" : "text-muted"}`}>{presetLabel(p, lang).subtitle}</span>
                         </span>
                         {on && <Check size={18} className="ml-auto shrink-0" />}
                       </button>
@@ -132,7 +137,7 @@ export default function SettingsPanel() {
                 </div>
               </Field>
             ))}
-            <Hint>เลือกพรีเซ็ตแล้วปรับละเอียดต่อได้ในแท็บ Video / Audio — เมื่อแก้ค่าใด ๆ จะเปลี่ยนเป็นโหมด Custom</Hint>
+            <Hint>{t("st.presetHint")}</Hint>
           </>
         )}
 
@@ -140,12 +145,12 @@ export default function SettingsPanel() {
           <>
             <Field label="Codec">
               <Options value={s.vcodec === "libvpx" ? "libvpx-vp9" : s.vcodec} onChange={(v) => set({ vcodec: v })} options={[
-                { v: "libx264", label: "H.264", hint: "libx264 — เข้ากันได้ทุกอุปกรณ์" },
-                { v: "libx265", label: "H.265 / HEVC", hint: "libx265 — ไฟล์เล็กกว่า แต่เข้ารหัสช้ากว่า" },
-                { v: "libvpx-vp9", label: "VP9", hint: "libvpx-vp9 — เหมาะกับเว็บ (WebM)" },
+                { v: "libx264", label: "H.264", hint: "libx264" },
+                { v: "libx265", label: "H.265 / HEVC", hint: "libx265" },
+                { v: "libvpx-vp9", label: "VP9", hint: "libvpx-vp9 (WebM)" },
               ]} />
-              {s.vcodec === "libx265" && !multiThread && <Hint warn>H.265 ในโหมด single-thread ช้ามาก — แนะนำ Ultrafast + ลดความละเอียด</Hint>}
-              {s.vcodec === "libvpx-vp9" && <Hint>VP9 ใน ffmpeg.wasm บางเวอร์ชันไม่เสถียร — ถ้าล้มเหลวระบบจะสลับเป็น VP8 (WebM) ให้อัตโนมัติ</Hint>}
+              {s.vcodec === "libx265" && !multiThread && <Hint warn>{t("st.x265slow")}</Hint>}
+              {s.vcodec === "libvpx-vp9" && <Hint>{t("st.vp9note")}</Hint>}
             </Field>
             <Field label="Preset / Speed">
               <Options value={s.speed} onChange={(v) => set({ speed: v })} options={[
@@ -161,7 +166,7 @@ export default function SettingsPanel() {
               <Field label="Quality factor (CRF)" right={<span className="tag tag-accent">{s.crf}</span>}>
                 <input type="range" min={18} max={32} step={1} value={s.crf} className="range" style={{ ["--fill" as string]: `${crfFill}%` }}
                   onChange={(e) => set({ crf: Number(e.target.value) })} aria-label="CRF" />
-                <div className="mt-2 flex justify-between mono text-[.64rem] text-muted"><span>18 ชัดมาก</span><span>23 แนะนำ</span><span>32 ไฟล์เล็ก</span></div>
+                <div className="mt-2 flex justify-between mono text-[.64rem] text-muted"><span>{t("st.crf18")}</span><span>{t("st.crf23")}</span><span>{t("st.crf32")}</span></div>
               </Field>
             ) : (
               <Field label="Target size (MB)" right={vKbps ? <span className="tag">≈ {vKbps.toLocaleString()} kb/s</span> : null}>
@@ -172,12 +177,12 @@ export default function SettingsPanel() {
                     <button key={n} type="button" className="opt" aria-pressed={s.targetSizeMB === n} onClick={() => set({ targetSizeMB: n })}>{n}MB</button>
                   ))}
                 </div>
-                {vKbps !== null && vKbps < 250 && <Hint warn>วิดีโอยาวเกินขนาดเป้าหมาย บิตเรตต่ำมาก ควรลดความละเอียดเป็น 720p/480p</Hint>}
+                {vKbps !== null && vKbps < 250 && <Hint warn>{t("st.lowBitrate")}</Hint>}
               </Field>
             )}
             <Field label="Frame rate (FPS)">
               <Options value={s.fps} onChange={(v) => set({ fps: v })} options={[
-                { v: "source", label: "Same as source" }, { v: "24", label: "24" }, { v: "30", label: "30" }, { v: "60", label: "60" },
+                { v: "source", label: t("st.same") }, { v: "24", label: "24" }, { v: "30", label: "30" }, { v: "60", label: "60" },
               ]} />
             </Field>
             <Field label="Resolution">
@@ -190,7 +195,7 @@ export default function SettingsPanel() {
                   <span className="text-muted">×</span>
                   <input className="input" inputMode="numeric" placeholder="Height (auto)" value={s.customH} onChange={(e) => set({ customH: e.target.value.replace(/\D/g, "") })} />
                 </div>
-              ) : s.resolution !== "source" && <Hint>ปรับด้านสั้นเป็น {s.resolution}px รักษาสัดส่วนเดิม (รองรับคลิปแนวตั้ง) ไม่ขยายภาพเล็กให้ใหญ่ขึ้น</Hint>}
+              ) : s.resolution !== "source" && <Hint>{t("st.resNote", { n: s.resolution })}</Hint>}
             </Field>
           </>
         )}
@@ -201,7 +206,7 @@ export default function SettingsPanel() {
               <Options value={s.acodec} onChange={(v) => set({ acodec: v })} options={[
                 { v: "aac", label: "AAC" }, { v: "libmp3lame", label: "MP3" }, { v: "libopus", label: "Opus" }, { v: "none", label: "Mute" },
               ]} />
-              {s.acodec === "none" && <p className="mt-3 flex items-center gap-2 text-[.76rem] text-muted"><VolumeX size={14} /> ตัดเสียงออกทั้งหมด</p>}
+              {s.acodec === "none" && <p className="mt-3 flex items-center gap-2 text-[.76rem] text-muted"><VolumeX size={14} /> {t("st.mute")}</p>}
             </Field>
             <Field label="Bitrate">
               <Options value={s.abitrate} disabled={s.acodec === "none"} onChange={(v) => set({ abitrate: v })} options={[
@@ -212,11 +217,11 @@ export default function SettingsPanel() {
         )}
 
         {tab === "output" && (
-          <Field label="Container (แปลงไฟล์)">
+          <Field label={t("st.container")}>
             <Options value={s.container} onChange={(v) => set({ container: v })} options={[
               { v: "mp4", label: "MP4" }, { v: "mov", label: "MOV" }, { v: "mkv", label: "MKV" }, { v: "webm", label: "WEBM" },
             ]} />
-            <Hint>MP4 + H.264 + AAC เปิดได้ทุกที่ (มือถือ, CapCut, Premiere) — WebM ใช้ VP9 + Opus</Hint>
+            <Hint>{t("st.containerNote")}</Hint>
           </Field>
         )}
 

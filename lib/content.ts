@@ -35,6 +35,8 @@ export interface SiteContent {
   ctaSubtitle: string;
   ctaButton: string;
   footerNote: string;
+  /** Show the public "X files compressed" counter (read from the Thai doc) */
+  showStats: boolean;
 }
 
 export type PresetIcon =
@@ -50,6 +52,10 @@ export interface PresetDoc {
   icon: PresetIcon;
   enabled: boolean;
   settings: Partial<Omit<Settings, "presetId">>;
+  /** Optional English labels (fall back to the Thai ones) */
+  titleEn?: string;
+  subtitleEn?: string;
+  groupEn?: string;
 }
 
 export const DEFAULT_CONTENT: SiteContent = {
@@ -93,39 +99,84 @@ export const DEFAULT_CONTENT: SiteContent = {
   ctaSubtitle: "ฟรี ไม่มีลายน้ำ ไม่ต้องสมัคร ไฟล์ไม่ออกจากเครื่อง",
   ctaButton: "เริ่มเลย",
   footerNote: "ไฟล์ของคุณถูกประมวลผลบนเครื่องคุณเท่านั้น",
+  showStats: true,
+};
+
+export const DEFAULT_CONTENT_EN: SiteContent = {
+  siteName: "Framepress",
+  tagline: "Video Compressor",
+  announcement: "",
+  heroEyebrow: "REC • Compress in your browser, no upload",
+  heroTitle: "Press every frame.",
+  heroHighlight: "frame",
+  heroDescription:
+    "HandBrake-style video compression and conversion that runs on your own device. Drop a file, pick a preset, hit start and download right away — nothing is uploaded to a server.",
+  heroPrimaryCta: "Compress a file",
+  heroSecondaryCta: "See presets",
+  chips: ["No upload", "H.264 • H.265 • VP9", "Free, no watermark"],
+  marquee: ["IN-BROWSER", "NO UPLOAD", "H.264", "H.265 / HEVC", "VP9", "AAC • OPUS • MP3", "TIKTOK 1080P", "DISCORD 8MB", "NO WATERMARK"],
+  workspaceEyebrow: "Workspace",
+  workspaceTitle: "Drop, tweak, press.",
+  workspaceSubtitle: "Everything runs on your device. Close the tab and your files are gone with it.",
+  featuresEyebrow: "Why Framepress",
+  featuresTitle: "A compressor editors actually use",
+  features: [
+    { title: "Files never leave your device", body: "FFmpeg WebAssembly runs in a Web Worker — no uploads, no queues, no server costs." },
+    { title: "HandBrake-level control", body: "Ready presets for TikTok, YouTube and Discord, or tune codec, speed, CRF, FPS, resolution and audio yourself." },
+    { title: "Multi-thread speed", body: "When your browser allows it, the multi-threaded FFmpeg core kicks in automatically — nearly twice as fast." },
+  ],
+  stepsEyebrow: "How it works",
+  steps: [
+    { title: "Drop a file", body: "Supports .mp4 .mov .mkv .avi .webm — resolution, bitrate, duration and codecs are read instantly." },
+    { title: "Pick a preset", body: "Start from a preset and fine-tune. CRF 23 is the sweet spot between quality and size." },
+    { title: "Press start", body: "Watch percent, ETA and live output size. Open the Log Console to see the real FFmpeg command." },
+    { title: "Download", body: "Compare before/after and download instantly, or move on to the next file." },
+  ],
+  faqEyebrow: "FAQ",
+  faq: [
+    { q: "Why is the first load slow?", a: "The FFmpeg engine (~30MB) downloads once, then your browser caches it." },
+    { q: "How big can a file be?", a: "WebAssembly memory is capped around 2GB — files under ~1GB work best." },
+    { q: "Why is H.265 slow?", a: "H.265 is several times heavier than H.264. For everyday use pick H.264 + Veryfast." },
+    { q: "How does Discord 8MB work?", a: "The bitrate is computed from the clip length and target size so the file stays under the limit." },
+  ],
+  ctaTitle: "Ready to press your first file?",
+  ctaSubtitle: "Free, no watermark, no sign-up, nothing leaves your device.",
+  ctaButton: "Let's go",
+  footerNote: "Your files are processed on your device only.",
+  showStats: true,
 };
 
 export const DEFAULT_PRESETS: PresetDoc[] = [
   {
-    id: "tiktok", title: "TikTok 1080p", subtitle: "H.264 • 1080p • 30 FPS • AAC 128k", group: "Web / Social Media", icon: "smartphone", enabled: true,
+    id: "tiktok", titleEn: "TikTok 1080p", subtitleEn: "H.264 • 1080p • 30 FPS • AAC 128k", groupEn: "Web / Social Media", title: "TikTok 1080p", subtitle: "H.264 • 1080p • 30 FPS • AAC 128k", group: "Web / Social Media", icon: "smartphone", enabled: true,
     settings: { container: "mp4", vcodec: "libx264", speed: "veryfast", rateMode: "crf", crf: 23, fps: "30", resolution: "1080", acodec: "aac", abitrate: "128k" },
   },
   {
-    id: "youtube", title: "YouTube 1080p", subtitle: "H.264 • 1080p • CRF 20 • AAC 192k", group: "Web / Social Media", icon: "monitor", enabled: true,
+    id: "youtube", titleEn: "YouTube 1080p", subtitleEn: "H.264 • 1080p • CRF 20 • AAC 192k", groupEn: "Web / Social Media", title: "YouTube 1080p", subtitle: "H.264 • 1080p • CRF 20 • AAC 192k", group: "Web / Social Media", icon: "monitor", enabled: true,
     settings: { container: "mp4", vcodec: "libx264", speed: "medium", rateMode: "crf", crf: 20, fps: "source", resolution: "1080", acodec: "aac", abitrate: "192k" },
   },
   {
-    id: "discord", title: "Discord 8MB", subtitle: "ขนาดไม่เกิน 8 MB • 720p • 30 FPS", group: "Web / Social Media", icon: "message", enabled: true,
+    id: "discord", titleEn: "Discord 8MB", subtitleEn: "Under 8 MB • 720p • 30 FPS", groupEn: "Web / Social Media", title: "Discord 8MB", subtitle: "ขนาดไม่เกิน 8 MB • 720p • 30 FPS", group: "Web / Social Media", icon: "message", enabled: true,
     settings: { container: "mp4", vcodec: "libx264", speed: "veryfast", rateMode: "target", targetSizeMB: 8, fps: "30", resolution: "720", acodec: "aac", abitrate: "96k" },
   },
   {
-    id: "fast", title: "Fast Compression", subtitle: "เน้นเร็ว • Ultrafast • CRF 26", group: "General", icon: "zap", enabled: true,
+    id: "fast", titleEn: "Fast Compression", subtitleEn: "Speed first • Ultrafast • CRF 26", groupEn: "General", title: "Fast Compression", subtitle: "เน้นเร็ว • Ultrafast • CRF 26", group: "General", icon: "zap", enabled: true,
     settings: { container: "mp4", vcodec: "libx264", speed: "ultrafast", rateMode: "crf", crf: 26, fps: "source", resolution: "source", acodec: "aac", abitrate: "128k" },
   },
   {
-    id: "hq", title: "High Quality", subtitle: "เน้นชัด • Slow • CRF 18 • AAC 192k", group: "General", icon: "gem", enabled: true,
+    id: "hq", titleEn: "High Quality", subtitleEn: "Quality first • Slow • CRF 18 • AAC 192k", groupEn: "General", title: "High Quality", subtitle: "เน้นชัด • Slow • CRF 18 • AAC 192k", group: "General", icon: "gem", enabled: true,
     settings: { container: "mp4", vcodec: "libx264", speed: "slow", rateMode: "crf", crf: 18, fps: "source", resolution: "source", acodec: "aac", abitrate: "192k" },
   },
 ];
 
 /** Merge stored data over defaults so new fields added in code never break older Firestore docs. */
-export function mergeContent(stored: Partial<SiteContent> | undefined | null): SiteContent {
-  const out = { ...DEFAULT_CONTENT };
+export function mergeContent(stored: Partial<SiteContent> | undefined | null, defaults: SiteContent = DEFAULT_CONTENT): SiteContent {
+  const out = { ...defaults };
   if (!stored) return out;
-  for (const k of Object.keys(DEFAULT_CONTENT) as (keyof SiteContent)[]) {
+  for (const k of Object.keys(defaults) as (keyof SiteContent)[]) {
     const v = stored[k];
     if (v === undefined || v === null) continue;
-    if (Array.isArray(DEFAULT_CONTENT[k]) !== Array.isArray(v)) continue;
+    if (Array.isArray(defaults[k]) !== Array.isArray(v) || typeof defaults[k] !== typeof v) continue;
     (out as Record<string, unknown>)[k] = v;
   }
   return out;
@@ -143,6 +194,9 @@ export function sanitizePresets(items: unknown): PresetDoc[] {
       icon: (PRESET_ICONS as string[]).includes(p.icon) ? p.icon : "film",
       enabled: p.enabled !== false,
       settings: p.settings && typeof p.settings === "object" ? p.settings : {},
+      ...(p.titleEn ? { titleEn: String(p.titleEn) } : {}),
+      ...(p.subtitleEn ? { subtitleEn: String(p.subtitleEn) } : {}),
+      ...(p.groupEn ? { groupEn: String(p.groupEn) } : {}),
     }));
 }
 

@@ -58,6 +58,14 @@ function PresetRow({ p, i, n, groups, onChange, onMove, onDelete, onDuplicate, d
               <button type="button" className="btn btn-ghost btn-sm" title="สร้างจากค่าที่ตั้งไว้" onClick={() => onChange({ ...p, subtitle: describe(s) })}><Wand2 size={14} /> อัตโนมัติ</button>
             </div>
           </div>
+          <details className="cell p-3 [&_summary::-webkit-details-marker]:hidden">
+            <summary className="cursor-pointer list-none text-[.8rem] font-medium">🇬🇧 ชื่อภาษาอังกฤษ (ไม่บังคับ — เว้นว่างจะใช้ชื่อไทย)</summary>
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <TextField label="Title (EN)" value={p.titleEn ?? ""} placeholder={p.title} onChange={(v) => onChange({ ...p, titleEn: v || undefined })} />
+              <TextField label="Subtitle (EN)" value={p.subtitleEn ?? ""} placeholder={p.subtitle} onChange={(v) => onChange({ ...p, subtitleEn: v || undefined })} />
+              <TextField label="Group (EN)" value={p.groupEn ?? ""} placeholder={p.group} onChange={(v) => onChange({ ...p, groupEn: v || undefined })} />
+            </div>
+          </details>
           <div>
             <Label>ไอคอน</Label>
             <div className="flex flex-wrap gap-1.5">

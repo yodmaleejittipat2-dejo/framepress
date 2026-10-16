@@ -1,12 +1,17 @@
 "use client";
+import { useState } from "react";
 import { Clock, Film, Gauge, HardDrive, Maximize, Music, RefreshCcw, Timer } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { useT } from "@/lib/i18n";
 import { formatBytes, formatDuration } from "@/lib/format";
+import TrimBar from "./TrimBar";
 
 export default function FileInfoCard({ onChange }: { onChange: () => void }) {
+  const t = useT();
   const meta = useStore((s) => s.meta);
   const url = useStore((s) => s.sourceUrl);
   const status = useStore((s) => s.status);
+  const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   if (!meta) return null;
 
   const probing = status === "probing" || (status === "loading-engine" && !meta.vcodec);
@@ -17,25 +22,26 @@ export default function FileInfoCard({ onChange }: { onChange: () => void }) {
     { icon: Gauge, label: "Bitrate", value: meta.bitrate ? `${meta.bitrate.toLocaleString()} kb/s` : "—" },
     { icon: Timer, label: "Frame rate", value: meta.fps ? `${+meta.fps.toFixed(2)} fps` : "—" },
     { icon: Film, label: "Video codec", value: meta.vcodec ?? "—" },
-    { icon: Music, label: "Audio codec", value: meta.acodec ?? (probing ? "—" : "ไม่มีเสียง") },
+    { icon: Music, label: "Audio codec", value: meta.acodec ?? (probing ? "—" : t("fi.noAudio")) },
   ];
 
   return (
     <div className="panel pop p-5 sm:p-6">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="kicker">Source file</div>
+          <div className="kicker">{t("fi.source")}</div>
           <h3 className="mt-2 truncate text-lg font-semibold" title={meta.name}>{meta.name}</h3>
         </div>
         <button className="btn btn-ghost btn-sm shrink-0" onClick={onChange} disabled={status === "processing"}>
-          <RefreshCcw size={14} /> เปลี่ยนไฟล์
+          <RefreshCcw size={14} /> {t("fi.change")}
         </button>
       </div>
       {url && (
-        <video src={url} controls muted playsInline preload="metadata"
+        <video ref={setVideo} src={url} controls muted playsInline preload="metadata"
           className="mt-4 aspect-video w-full rounded-xl border border-line bg-black object-contain" />
       )}
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <TrimBar video={video} />
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {items.map(({ icon: Icon, label, value }) => (
           <div key={label} className="cell px-3.5 py-3">
             <div className="flex items-center gap-1.5 mono text-[.6rem] uppercase tracking-[.1em] text-muted"><Icon size={12} /> {label}</div>
@@ -43,7 +49,7 @@ export default function FileInfoCard({ onChange }: { onChange: () => void }) {
           </div>
         ))}
         <div className="flex items-center justify-center rounded-[14px] border border-dashed border-line px-3 py-3 mono text-[.62rem] uppercase tracking-[.12em] text-muted">
-          {probing ? "กำลังอ่านไฟล์…" : "Local only"}
+          {probing ? t("fi.reading") : t("fi.local")}
         </div>
       </div>
     </div>

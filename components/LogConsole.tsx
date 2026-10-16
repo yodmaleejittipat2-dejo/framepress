@@ -2,12 +2,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Copy, Terminal, Trash2 } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { useT } from "@/lib/i18n";
 
 export default function LogConsole() {
   const logs = useStore((s) => s.logs);
   const command = useStore((s) => s.command);
   const clear = useStore((s) => s.clearLogs);
   const [open, setOpen] = useState(false);
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const box = useRef<HTMLDivElement>(null);
 
@@ -21,8 +23,8 @@ export default function LogConsole() {
       <button className="flex w-full items-center gap-3 px-5 py-4 text-left" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <span className="grid h-9 w-9 place-items-center rounded-[10px] border border-line bg-surface-2"><Terminal size={16} /></span>
         <span className="flex-1">
-          <b className="block text-sm font-semibold">Log Console</b>
-          <span className="block text-[.74rem] text-muted">ดูคำสั่ง FFmpeg CLI ที่ทำงานอยู่จริง · <span className="mono">{logs.length}</span> บรรทัด</span>
+          <b className="block text-sm font-semibold">{t("log.title")}</b>
+          <span className="block text-[.74rem] text-muted">{t("log.sub")} · <span className="mono">{logs.length}</span> {t("log.lines")}</span>
         </span>
         <ChevronDown size={18} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
@@ -31,18 +33,18 @@ export default function LogConsole() {
           {command && (
             <div className="console flex items-start gap-3 p-3.5">
               <code className="cmd flex-1 break-all">{command}</code>
-              <button className="btn btn-ghost btn-sm !px-2.5 !text-white" title="คัดลอกคำสั่ง"
+              <button className="btn btn-ghost btn-sm !px-2.5 !text-white" title={t("log.copy")}
                 onClick={() => { navigator.clipboard?.writeText(command); setCopied(true); setTimeout(() => setCopied(false), 1400); }}>
                 {copied ? <Check size={14} /> : <Copy size={14} />}
               </button>
             </div>
           )}
           <div ref={box} className="console h-64 overflow-auto p-3.5">
-            {shown.length === 0 ? <span className="opacity-40">ยังไม่มี log — เลือกไฟล์เพื่อเริ่ม</span>
+            {shown.length === 0 ? <span className="opacity-40">{t("log.empty")}</span>
               : shown.map((l, i) => <div key={i} className={`whitespace-pre-wrap break-all ${cls(l)}`}>{l}</div>)}
           </div>
           <div className="flex justify-end">
-            <button className="btn btn-ghost btn-sm" onClick={clear}><Trash2 size={13} /> ล้าง log</button>
+            <button className="btn btn-ghost btn-sm" onClick={clear}><Trash2 size={13} /> {t("log.clear")}</button>
           </div>
         </div>
       )}
